@@ -12,19 +12,45 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 )
 
 func main() {
-	lines := make(chan string) // Hold our messages
-	done := make(chan int)     // Syncronize goroutines
+	scanners := make(chan *bufio.Scanner) // Hold input files
+	lines := make(chan string)            // Hold our messages
+	done := make(chan int)                // Syncronize goroutines
 
-	scanner := bufio.NewScanner(os.Stdin)
+	// If called with arguments, scan each file and feed scanner into
+	// channel. Otherwise scan standard input and feed scanner into
+	// channel.
+	if len(os.Args) > 1 {
+		go func() {
+			for _, arg := range os.Args[1:] {
+				file, err := os.Open(arg)
+				if err != nil {
+					log.Fatalf("Can't open %s: %s\n", arg, err)
+				}
+				scanners <- bufio.NewScanner(file)
+			}
+			close(scanners)
+		}()
+	} else {
+		go func() {
+			scanners <- bufio.NewScanner(os.Stdin)
+			close(scanners)
+		}()
+	}
 
 	// Pipe input from scanner to a channel
 	go func() {
-		for scanner.Scan() {
-			lines <- scanner.Text()
+		for scanner := range scanners {
+			for scanner.Scan() {
+				lines <- scanner.Text()
+			}
+			if scanner.Err() != nil {
+				log.Fatalf("Error during scanning: %s\n", scanner.Err())
+			}
 		}
 		close(lines)
 	}()
